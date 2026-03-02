@@ -1275,7 +1275,7 @@ const TrainingVolumeDashboard = () => {
               
               {volumeCapViolations.length > 0 && (
                 <div className="mb-4 bg-red-50 border-l-4 border-red-400 p-4 rounded">
-                  <h3 className="font-semibold text-red-900 mb-2">⚠️ Volume Cap Violations (>10 sets/day)</h3>
+                  <h3 className="font-semibold text-red-900 mb-2">⚠️ Volume Cap Violations ({'>'}10 sets/day)</h3>
                   <p className="text-sm text-red-700 mb-2">
                     Hypertrophy response typically caps at ~10 sets per muscle per session. Consider redistributing volume:
                   </p>
@@ -1587,7 +1587,7 @@ const TrainingVolumeDashboard = () => {
             <p><strong>Training Frequency:</strong> See how many days per week each muscle is trained. Aim for 2-3x optimal frequency. Click chart to highlight frequency groups.</p>
             <p><strong>Daily Split:</strong> Training load distribution across the week with compound/isolation balance. Click day cards or chart bars for exercise details.</p>
             <p><strong>Movement Patterns:</strong> Compound vs isolation split with drill-down into specific patterns (squat, push, pull, etc.). Click bars to see exercises.</p>
-            <p><strong>Volume Heatmap:</strong> Visual matrix showing which muscles train on which days. Red cells indicate >10 sets/day violations. Click any muscle to see breakdown.</p>
+            <p><strong>Volume Heatmap:</strong> Visual matrix showing which muscles train on which days. Red cells indicate {'>'}10 sets/day violations. Click any muscle to see breakdown.</p>
             <p><strong>Balance Check:</strong> Radar chart comparing your volume to optimal targets across muscle groups. Switch between Push, Pull, Legs, and Core categories.</p>
           </div>
         </div>
