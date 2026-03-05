@@ -6,27 +6,40 @@ A React-based dashboard for analyzing and visualizing training volume by muscle 
 
 ### Program Analysis
 - **Program Score**: Automatically grades your training program (A-F) based on volume targets, training frequency, compound/isolation balance, and session volume caps
-- **Quick Insights**: Actionable recommendations highlighting areas for improvement
+- **Executive Summary**: At-a-glance overview of program strengths, areas needing attention, recovery signals, and structural completeness
 - **CSV Upload**: Import your own training program data from CSV files
+- **Dark Mode**: Toggle between light and dark themes
 
-### Volume Analysis Views
-- **Overview**: High-level view of weekly volume by major muscle groups with MEV/MAV/MRV reference lines
-- **Muscle Volume**: Detailed weekly volume breakdown for each individual muscle
-- **Volume Targets**: Compare training volume against hypertrophy landmarks (MEV, MAV, MRV)
-- **Training Frequency**: Analyze how many days per week each muscle is trained
-- **Daily Split**: View training load distribution across the week
-- **Movement Patterns**: Analyze compound vs isolation exercise balance
-- **Volume Heatmap**: Visual matrix showing volume distribution across muscles and days
-- **Balance Check**: Radar chart comparing volume against optimal targets
+### Dashboard Tabs
+- **Overview**: High-level view with Executive Summary and weekly volume by major muscle groups
+- **Volume Detail**: Detailed weekly volume breakdown with Muscle Readiness Scorecard (WPI + SFR%)
+- **Targets & Frequency**: Training frequency analysis and Volume Landmarks (MEV/MAV/MRV) visualization
+- **Program Structure**: Daily volume distribution, movement patterns, and volume heatmap
+- **Balance Check**: Radar charts comparing volume against optimal targets by muscle group + Push:Pull ratio
+
+### Key Stats
+- **Program Score**: Composite score (0-100) with letter grade
+- **Total Sets (Raw)**: Actual sets performed per week
+- **Muscle-Weighted Sets**: Volume redistributed across all targeted muscles
+- **Compound/Isolation Sets**: Raw counts and percentages
+- **Training Days**: Number of sessions per week
 
 ### Volume Calculation Methods
 - **Fractional**: Primary muscles get full sets, secondary muscles get 0.5 sets (default)
 - **Direct Sets Only**: Only counts primary target muscles
 - **All Sets Equal**: Counts full sets for both primary and secondary muscles
 
+### Advanced Analytics
+- **Weak Point Index (WPI)**: Composite score (0-100) combining volume (60%) and frequency (40%) to identify underdeveloped muscles
+- **Stimulus-to-Fatigue Ratio (SFR%)**: Percentage of volume from isolation exercises - higher means more targeted stimulus with less systemic fatigue
+- **Push:Pull Ratio**: Balance analysis between push and pull muscle groups
+- **Volume Cap Detection**: Identifies when muscles exceed 10 sets/session (hypertrophy cap)
+- **Back-to-Back Training Alerts**: Warns when muscles are trained on consecutive days
+
 ### Exercise Breakdown
 - Click on any chart element or category to see detailed exercise breakdown
-- View exercise details including sets, reps (when available), and role (primary/secondary)
+- View exercise details including sets, reps (when available), role (primary/secondary), and type (compound/isolation)
+- Sortable by day or compound-first order
 
 ## Getting Started
 
