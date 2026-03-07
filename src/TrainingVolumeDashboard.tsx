@@ -1334,8 +1334,8 @@ const TrainingVolumeAnalysis = () => {
                   <BarChart 
                     data={[
                       { status: 'Below MEV', count: volumeLandmarksData.filter(m => m.volume < 4).length, fill: C_BELOW, key: 'below' },
-                      { status: 'MEV-MAV (4-10)', count: volumeLandmarksData.filter(m => m.volume >= 4 && m.volume < 10).length, fill: C_IN_LOW, key: 'optimal' },
-                      { status: 'MAV-MRV (10-20)', count: volumeLandmarksData.filter(m => m.volume >= 10 && m.volume <= 20).length, fill: C_IN_HIGH, key: 'optimal' },
+                      { status: 'MEV-MAV (4-10)', count: volumeLandmarksData.filter(m => m.volume >= 4 && m.volume < 10).length, fill: C_IN_LOW, key: 'mevmav' },
+                      { status: 'MAV-MRV (10-20)', count: volumeLandmarksData.filter(m => m.volume >= 10 && m.volume <= 20).length, fill: C_IN_HIGH, key: 'mavmrv' },
                       { status: 'Above MRV', count: volumeLandmarksData.filter(m => m.volume > 20).length, fill: C_ABOVE, key: 'above' }
                     ]}
                     onClick={(data) => {
@@ -1372,7 +1372,7 @@ const TrainingVolumeAnalysis = () => {
                   { key: 'mavmrv',   label: 'MAV – MRV',   range: '10 – 20 sets', color: 'green',   muscles: volumeLandmarksData.filter(m => m.volume >= 10 && m.volume <= 20).sort((a,b) => b.volume - a.volume) },
                   { key: 'above',    label: 'Above MRV',   range: '> 20 sets',    color: 'orange',  muscles: volumeLandmarksData.filter(m => m.volume > 20).sort((a,b) => b.volume - a.volume) },
                 ].map(({ key, label, range, color, muscles }) => {
-                  const isHighlighted = highlightedVolumeLandmark === key || highlightedVolumeLandmark === 'optimal' && (key === 'mevmav' || key === 'mavmrv');
+                  const isHighlighted = highlightedVolumeLandmark === key;
                   const colorMap = {
                     rose:    { border: isHighlighted ? 'border-rose-400' : (dm ? 'border-gray-700' : 'border-slate-200'), accent: 'bg-rose-400',    count: dm ? 'text-rose-300' : 'text-rose-600',    muscleTxt: dm ? 'text-slate-300' : 'text-slate-700', badgeCls: dm ? 'bg-rose-900 text-rose-300' : 'bg-rose-100 text-rose-700' },
                     emerald: { border: isHighlighted ? 'border-emerald-400' : (dm ? 'border-gray-700' : 'border-slate-200'), accent: 'bg-emerald-500', count: dm ? 'text-emerald-300' : 'text-emerald-600', muscleTxt: dm ? 'text-slate-300' : 'text-slate-700', badgeCls: dm ? 'bg-emerald-900 text-emerald-300' : 'bg-emerald-100 text-emerald-700' },
@@ -1585,9 +1585,17 @@ const TrainingVolumeAnalysis = () => {
               <div className={`mt-8 pt-6 border-t ${dm ? 'border-gray-700' : 'border-slate-200'}`}>
               <h2 className={`text-xl font-bold mb-2 flex items-center ${dm ? 'text-slate-100' : 'text-slate-800'}`}>
                 Volume Distribution Heatmap
-                <InfoTooltip dark={dm} content={<span>Each cell shows how many (muscle-weighted) sets a muscle receives on a given day. Use this to spot: distribution imbalances (one muscle crammed into one day), session overload (red cells = &gt;10 sets/muscle/day which exceeds the hypertrophy cap), and muscles trained on consecutive days without recovery time. Ideally, volume for each muscle should be spread across 2–3 days with gaps between sessions.</span>} />
+                <InfoTooltip dark={dm} content={<span>
+                  <strong>How to read this heatmap:</strong><br/><br/>
+                  Each cell shows the muscle-weighted sets a muscle receives on a given training day.<br/><br/>
+                  <strong>Colour intensity is per-row (relative):</strong> the darkest cell in each row = that muscle's highest-volume day. This makes it easy to compare which days are heaviest <em>for that specific muscle</em>, regardless of absolute set count.<br/><br/>
+                  <strong>Red cells</strong> = that muscle exceeded 10 sets in one session — the hypertrophy cap beyond which extra sets add fatigue without proportional growth.<br/><br/>
+                  Use the heatmap to spot: volume crammed into one day (imbalanced distribution), red session overloads, and muscles trained on back-to-back days without recovery time.
+                </span>} />
               </h2>
-              <p className="text-sm text-slate-600 mb-4">Darker <span style={{color:'#6366f1'}}>indigo</span> = more volume. <span className="text-red-500">Red</span> = session cap exceeded (&gt;10 sets).</p>
+              <p className={`text-sm mb-4 ${dm ? 'text-slate-400' : 'text-slate-600'}`}>
+                Darker <span style={{color: '#6366f1', fontWeight: 600}}>indigo</span> = more volume that day. <span style={{color: '#ef4444', fontWeight: 600}}>Red</span> = session cap exceeded (&gt;10 sets).
+              </p>
               
               
               <div className="overflow-x-auto">
@@ -1614,16 +1622,25 @@ const TrainingVolumeAnalysis = () => {
                             const maxVol = Math.max(...allVolsForMuscle);
                             const intensity = vol > 0 ? (vol / maxVol) * 100 : 0;
                             const exceedsCap = vol > 10;
-                            const bgColor = vol > 0 ? (exceedsCap ? 'rgba(239, 68, 68, ' + (intensity / 100) + ')' : `rgba(99, 102, 241, ${intensity / 100})`) : 'transparent';
+                            const bgColor = vol > 0
+                              ? (exceedsCap ? 'rgba(239, 68, 68, ' + (intensity / 100) + ')' : `rgba(99, 102, 241, ${intensity / 100})`)
+                              : (dm ? 'rgba(99,102,241,0.04)' : 'transparent');
                             const textColor = intensity > 50 ? 'white' : (dm ? '#e2e8f0' : '#1e293b');
+                            const cellTitle = vol > 0
+                              ? exceedsCap
+                                ? `${muscle} on ${dayDataItem.day}: ${vol.toFixed(1)} sets — ⚠️ exceeds 10-set session cap`
+                                : `${muscle} on ${dayDataItem.day}: ${vol.toFixed(1)} sets (${intensity.toFixed(0)}% of this muscle's peak day)`
+                              : `${muscle} not trained on ${dayDataItem.day}`;
                             return (
                               <td 
                                 key={dayDataItem.day} 
                                 className="p-2 text-center"
+                                title={cellTitle}
                                 style={{
                                   backgroundColor: bgColor,
                                   color: textColor,
-                                  fontWeight: exceedsCap ? 'bold' : 'normal'
+                                  fontWeight: exceedsCap ? 'bold' : 'normal',
+                                  cursor: 'help',
                                 }}
                               >
                                 {vol > 0 ? vol.toFixed(1) : '-'}
