@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ReferenceLine, LabelList } from 'recharts';
+import { downloadExportHTML } from './exportHTML';
 
 // ── Reusable tooltip component — body-appended to escape stacking contexts ──
 const InfoTooltip = ({ content, openLeft: forceLeft = false, dark = false }) => {
@@ -278,6 +279,218 @@ const TrainingVolumeAnalysis = () => {
       setUploadedData(data);
       setSelectedProgram('all');
     }
+  };
+
+  const handleExport = () => {
+    // Compute the data needed for export using already-derived values.
+    // We call calculateVolume inline here because the export snapshot must
+    // reflect the current filteredTrainingData + countingMethod at click time.
+    const snapshot = (() => {
+      const volumeByMuscle: Record<string, number> = {};
+      const volumeByPattern: Record<string, number> = {};
+      const volumeByType: Record<string, number> = {};
+      const volumeByDay: Record<string, { day: string; Compound: number; Isolation: number }> = {};
+      const muscleExerciseBreakdown: Record<string, Array<{ exercise: string; day: string; sets: number; role: string; type: string }>> = {};
+      const frequencyByMuscle: Record<string, Set<string>> = {};
+
+      filteredTrainingData.forEach(exercise => {
+        const { sets, primary, secondary, pattern, type, day } = exercise;
+        const processMuscleFn = (muscles: string[], role: string, volFn: (m: string) => number) => {
+          muscles.forEach(muscle => {
+            const vol = volFn(muscle);
+            volumeByMuscle[muscle] = (volumeByMuscle[muscle] || 0) + vol;
+            frequencyByMuscle[muscle] = frequencyByMuscle[muscle] || new Set();
+            frequencyByMuscle[muscle].add(day);
+            if (!muscleExerciseBreakdown[muscle]) muscleExerciseBreakdown[muscle] = [];
+            muscleExerciseBreakdown[muscle].push({ exercise: exercise.exercise, day, sets: vol, role, type });
+          });
+        };
+
+        if (countingMethod === 'fractional') {
+          processMuscleFn(primary,    'Primary',   () => sets / primary.length);
+          processMuscleFn(secondary,  'Secondary', () => (sets * 0.5) / Math.max(1, secondary.length));
+        } else if (countingMethod === 'allSets') {
+          processMuscleFn(primary,    'Primary',   () => sets);
+          processMuscleFn(secondary,  'Secondary', () => sets);
+        } else {
+          processMuscleFn(primary,    'Primary',   () => sets);
+        }
+
+        volumeByPattern[pattern] = (volumeByPattern[pattern] || 0) + sets;
+        volumeByType[type]       = (volumeByType[type]       || 0) + sets;
+        if (!volumeByDay[day]) volumeByDay[day] = { day, Compound: 0, Isolation: 0 };
+        volumeByDay[day][type] += sets;
+      });
+
+      const frequencyData = Object.entries(frequencyByMuscle).map(([muscle, days]) => ({ muscle, frequency: days.size }));
+      return { volumeByMuscle, volumeByPattern, volumeByType, volumeByDay, muscleExerciseBreakdown, frequencyData };
+    })();
+
+    const exMuscleData = Object.entries(snapshot.volumeByMuscle)
+      .map(([muscle, total]) => {
+        const bk = snapshot.muscleExerciseBreakdown[muscle] || [];
+        return {
+          muscle,
+          total:     parseFloat(total.toFixed(1)),
+          Compound:  parseFloat(bk.filter(e => e.type === 'Compound').reduce((s, e) => s + e.sets, 0).toFixed(1)),
+          Isolation: parseFloat(bk.filter(e => e.type === 'Isolation').reduce((s, e) => s + e.sets, 0).toFixed(1)),
+        };
+      })
+      .sort((a, b) => b.total - a.total);
+
+    const exPatternData = Object.entries(snapshot.volumeByPattern)
+      .map(([pattern, volume]) => ({ pattern, volume }))
+      .sort((a, b) => b.volume - a.volume);
+
+    const exDayData = Object.values(snapshot.volumeByDay).sort((a, b) => {
+      const order = { 'Day 1': 1, 'Day 2': 2, 'Day 3': 3, 'Day 4': 4, 'Day 5': 5, 'Day 6': 6, 'Day 7': 7 };
+      return (order[a.day] || 99) - (order[b.day] || 99);
+    });
+
+    const exCompVsIso = {
+      Compound:  exPatternData.filter(p => p.pattern !== 'Isolation Exercise').reduce((s, p) => s + p.volume, 0),
+      Isolation: exPatternData.find(p => p.pattern === 'Isolation Exercise')?.volume || 0,
+    };
+
+    const exTotalRaw      = filteredTrainingData.reduce((s, ex) => s + ex.sets, 0);
+    const exRawCompound   = snapshot.volumeByType['Compound']  || 0;
+    const exRawIsolation  = snapshot.volumeByType['Isolation'] || 0;
+    const exTotalVolume   = Object.values(snapshot.volumeByMuscle).reduce((s, v) => s + v, 0);
+
+    const exWeakPoint = exMuscleData.map(m => {
+      const freq = snapshot.frequencyData.find(f => f.muscle === m.muscle)?.frequency || 0;
+      const volScore  = Math.min(100, (m.total / 10) * 100);
+      const freqScore = freq === 0 ? 0 : freq === 1 ? 35 : freq <= 3 ? 100 : 70;
+      const wpi       = Math.round(volScore * 0.6 + freqScore * 0.4);
+      return { muscle: m.muscle, wpi, volScore: Math.round(volScore), freqScore, volume: m.total, frequency: freq };
+    }).sort((a, b) => a.wpi - b.wpi);
+
+    const exSFR = exMuscleData.map(m => {
+      const bk = snapshot.muscleExerciseBreakdown[m.muscle] || [];
+      const isoSets = bk.filter(e => e.type === 'Isolation').reduce((s, e) => s + e.sets, 0);
+      return { muscle: m.muscle, isolationPct: m.total > 0 ? Math.round((isoSets / m.total) * 100) : 0, isolationSets: parseFloat(isoSets.toFixed(1)), total: m.total };
+    });
+
+    const exVolumeCapViolations: Array<{day: string; muscle: string; volume: number}> = [];
+    const uniqueDays = [...new Set(filteredTrainingData.map(ex => ex.day))].sort((a, b) => {
+      const order = { 'Day 1': 1, 'Day 2': 2, 'Day 3': 3, 'Day 4': 4, 'Day 5': 5, 'Day 6': 6, 'Day 7': 7 };
+      return (order[a] || 99) - (order[b] || 99);
+    });
+    const exHeatMapData = uniqueDays.map(day => {
+      const row: Record<string, number | string> = { day };
+      Object.keys(snapshot.volumeByMuscle).sort().forEach(muscle => {
+        let vol = 0;
+        filteredTrainingData.filter(ex => ex.day === day).forEach(ex => {
+          const isPrimary   = ex.primary.includes(muscle);
+          const isSecondary = ex.secondary.includes(muscle);
+          if (countingMethod === 'fractional') {
+            if (isPrimary)   vol += ex.sets / ex.primary.length;
+            if (isSecondary) vol += (ex.sets * 0.5) / Math.max(1, ex.secondary.length);
+          } else if (countingMethod === 'directOnly') {
+            if (isPrimary) vol += ex.sets;
+          } else {
+            if (isPrimary || isSecondary) vol += ex.sets;
+          }
+        });
+        row[muscle] = parseFloat(vol.toFixed(1));
+        if ((row[muscle] as number) > 10) exVolumeCapViolations.push({ day, muscle, volume: row[muscle] as number });
+      });
+      return row;
+    });
+
+    const weeklyCompound    = snapshot.volumeByType['Compound']  || 0;
+    const weeklyIsolation   = snapshot.volumeByType['Isolation'] || 0;
+    const weeklyTotal       = weeklyCompound + weeklyIsolation;
+    const weeklyCompoundPct = weeklyTotal > 0 ? (weeklyCompound / weeklyTotal) * 100 : 0;
+
+    const exBalanceAnalysis = {
+      weeklyCompound,
+      weeklyIsolation,
+      weeklyCompoundPct,
+      dailyBalance: exDayData.map(day => {
+        const total       = day.Compound + day.Isolation;
+        const compoundPct = total > 0 ? (day.Compound / total) * 100 : 0;
+        return { day: day.day, compound: day.Compound, isolation: day.Isolation, total, compoundPct, hasIssue: day.Compound === 0 || day.Isolation === 0 };
+      }),
+    };
+
+    // Score
+    const inOptimal   = exMuscleData.filter(m => m.total >= 4 && m.total <= 20).length;
+    const totalMus    = exMuscleData.length;
+    const volScore    = totalMus > 0 ? (inOptimal / totalMus) * 40 : 0;
+    const optFreq     = snapshot.frequencyData.filter(f => f.frequency >= 2 && f.frequency <= 3).length;
+    const totalFreq   = snapshot.frequencyData.length;
+    const freqScore   = totalFreq > 0 ? (optFreq / totalFreq) * 30 : 0;
+    const balInRange  = weeklyCompoundPct >= 40 && weeklyCompoundPct <= 70;
+    const balScore    = balInRange ? 20 : Math.max(0, 20 - Math.abs(weeklyCompoundPct - 55) / 2);
+    const capScore    = exVolumeCapViolations.length === 0 ? 10 : Math.max(0, 10 - exVolumeCapViolations.length * 2);
+    const finalScore  = Math.round(((volScore + freqScore + balScore + capScore) / 100) * 100);
+    const exScore = {
+      score:   finalScore,
+      grade:   finalScore >= 90 ? 'A' : finalScore >= 80 ? 'B' : finalScore >= 70 ? 'C' : finalScore >= 60 ? 'D' : 'F',
+      color:   finalScore >= 80 ? 'green' : finalScore >= 60 ? 'blue' : finalScore >= 40 ? 'amber' : 'red',
+      details: [
+        { category: 'Volume Targets',           score: volScore,  max: 40, pct: totalMus > 0 ? (inOptimal / totalMus) * 100 : 0 },
+        { category: 'Training Frequency',       score: freqScore, max: 30, pct: totalFreq > 0 ? (optFreq / totalFreq) * 100 : 0 },
+        { category: 'Compound/Isolation Balance', score: balScore, max: 20, pct: (balScore / 20) * 100 },
+        { category: 'Session Volume Cap',       score: capScore,  max: 10, pct: (capScore / 10) * 100 },
+      ],
+    };
+
+    const exMusclesByCategory = (() => {
+      const cats: Record<string, typeof exMuscleData> = { Shoulders: [], Chest: [], Back: [], Legs: [], Biceps: [], Triceps: [], Other: [] };
+      exMuscleData.forEach(m => {
+        if (m.muscle === 'Chest') cats['Chest'].push(m);
+        else if (['Front Delts','Side Delts','Rear Delts'].includes(m.muscle)) cats['Shoulders'].push(m);
+        else if (m.muscle === 'Biceps') cats['Biceps'].push(m);
+        else if (m.muscle === 'Triceps') cats['Triceps'].push(m);
+        else if (['Lats','Scapular Retractors','Scapular Depressors','Scapular Elevators'].includes(m.muscle)) cats['Back'].push(m);
+        else if (['Quads','Glutes','Hams'].includes(m.muscle)) cats['Legs'].push(m);
+        else cats['Other'].push(m);
+      });
+      return Object.entries(cats)
+        .filter(([, ms]) => ms.length > 0)
+        .map(([category, ms]) => ({ category, Compound: ms.reduce((s, m) => s + m.Compound, 0), Isolation: ms.reduce((s, m) => s + m.Isolation, 0), total: ms.reduce((s, m) => s + m.total, 0) }))
+        .sort((a, b) => b.total - a.total);
+    })();
+
+    const pushMuscles = ['Chest','Front Delts','Side Delts','Triceps'];
+    const pullMuscles = ['Lats','Scapular Retractors','Scapular Depressors','Rear Delts','Biceps'];
+    const pushVol = parseFloat(pushMuscles.reduce((s, m) => s + (snapshot.volumeByMuscle[m] || 0), 0).toFixed(1));
+    const pullVol = parseFloat(pullMuscles.reduce((s, m) => s + (snapshot.volumeByMuscle[m] || 0), 0).toFixed(1));
+    const exPushPull = { pushVol, pullVol, ratio: pullVol > 0 ? parseFloat((pushVol / pullVol).toFixed(2)) : null };
+
+    const exVolumeLandmarks = exMuscleData.map(m => ({
+      muscle: m.muscle, volume: m.total, MEV: 4, MAV: 10, MRV: 20,
+      frequency: snapshot.frequencyData.find(f => f.muscle === m.muscle)?.frequency || 0,
+    }));
+
+    downloadExportHTML({
+      muscleData:              exMuscleData,
+      dayData:                 exDayData,
+      frequencyData:           snapshot.frequencyData,
+      volumeLandmarksData:     exVolumeLandmarks,
+      patternData:             exPatternData,
+      compoundPatternData:     exPatternData.filter(p => p.pattern !== 'Isolation Exercise'),
+      compoundVsIsolation:     exCompVsIso,
+      programScore:            exScore,
+      totalRawSets:            exTotalRaw,
+      rawCompoundSets:         exRawCompound,
+      rawIsolationSets:        exRawIsolation,
+      totalVolume:             exTotalVolume,
+      weakPointIndex:          exWeakPoint,
+      sfrData:                 exSFR,
+      balanceAnalysis:         exBalanceAnalysis,
+      volumeCapViolations:     exVolumeCapViolations,
+      heatMapData:             exHeatMapData,
+      pushPullRatio:           exPushPull,
+      musclesByCategory:       exMusclesByCategory,
+      filteredTrainingData,
+      countingMethod,
+      radarGroups,
+      volumeByMuscle:          snapshot.volumeByMuscle,
+      muscleExerciseBreakdown: snapshot.muscleExerciseBreakdown,
+    });
   };
 
   const calculateVolume = () => {
@@ -732,12 +945,21 @@ const TrainingVolumeAnalysis = () => {
               <h1 className={`text-3xl font-bold tracking-tight ${dm ? 'text-slate-100' : 'text-slate-900'}`}>Training Volume Analysis</h1>
               <p className={`text-sm mt-1 ${dm ? 'text-slate-500' : 'text-slate-400'}`}>Program structure, muscle volume &amp; weekly distribution</p>
             </div>
-            <button
-              onClick={() => setDarkMode(d => !d)}
-              className={`px-3 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-all ${dm ? 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700' : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-500 shadow-sm'}`}
-            >
-              {darkMode ? '☀️ Light' : '🌙 Dark'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExport}
+                className={`px-3 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-all ${dm ? 'border-indigo-500 bg-indigo-600 text-white hover:bg-indigo-500' : 'border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 shadow-sm'}`}
+                title="Export all charts and data as a standalone HTML file"
+              >
+                ↓ Export
+              </button>
+              <button
+                onClick={() => setDarkMode(d => !d)}
+                className={`px-3 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-all ${dm ? 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700' : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-500 shadow-sm'}`}
+              >
+                {darkMode ? '☀️ Light' : '🌙 Dark'}
+              </button>
+            </div>
           </div>
 
           {/* ── Control bar: CSV | Program filter | Vol method ── */}
