@@ -224,27 +224,29 @@ function svgVerticalSimple(
 function svgHorizontalSimple(
   items: Array<{ label: string; value: number; color: string }>,
   chartName: string,
-  opts: { labelW?: number; maxVal?: number; groupKey?: string } = {}
+  opts: { labelW?: number; maxVal?: number; groupKey?: string; width?: number; barH?: number; gap?: number } = {}
 ): string {
-  const W       = 820;
-  const BAR_H   = 20;
-  const GAP     = 8;
+  const W       = opts.width  ?? 820;
+  const BAR_H   = opts.barH   ?? 20;
+  const GAP     = opts.gap    ?? 8;
   const LABEL_W = opts.labelW ?? 170;
   const R_PAD   = 52;
   const chartW  = W - LABEL_W - R_PAD;
-  const topPad  = 8;
-  const botPad  = 8;
+  const topPad  = 10;
+  const botPad  = 10;
   const totalH  = topPad + items.length * (BAR_H + GAP) + botPad;
   const maxVal  = opts.maxVal ?? Math.max(1, ...items.map(d => d.value));
   const scale   = (v: number) => Math.max(0, (v / maxVal) * chartW);
   const gk      = opts.groupKey ?? '';
+  // Scale font sizes with bar height so labels stay vertically centred
+  const fs      = Math.max(10, Math.min(13, BAR_H * 0.58));
 
   const bars = items.map((d, i) => {
     const y  = topPad + i * (BAR_H + GAP);
     const bW = scale(d.value);
     return `
-    <text x="${LABEL_W - 8}" y="${y + BAR_H / 2 + 4}" text-anchor="end"
-      font-size="11.5" fill="#475569" pointer-events="none">${esc(d.label)}</text>
+    <text x="${LABEL_W - 8}" y="${y + BAR_H / 2 + fs * 0.36}" text-anchor="end"
+      font-size="${fs}" fill="#475569" pointer-events="none">${esc(d.label)}</text>
     ${bW > 0.5
       ? `<rect class="tvd-bar" x="${LABEL_W}" y="${y}" width="${bW}" height="${BAR_H}"
           fill="${d.color}" rx="3"
@@ -252,8 +254,8 @@ function svgHorizontalSimple(
           onmousemove="showTip(event,this)" onmouseleave="hideTip()"/>`
       : `<rect x="${LABEL_W}" y="${y + BAR_H/3}" width="${chartW * 0.02}" height="${BAR_H/3}"
           fill="#e2e8f0" rx="2" pointer-events="none"/>`}
-    <text x="${LABEL_W + bW + 7}" y="${y + BAR_H / 2 + 4}"
-      font-size="10.5" font-weight="700" fill="#1e293b" pointer-events="none">${d.value.toFixed(1)}</text>`;
+    <text x="${LABEL_W + bW + 7}" y="${y + BAR_H / 2 + fs * 0.36}"
+      font-size="${fs}" font-weight="700" fill="#1e293b" pointer-events="none">${d.value.toFixed(1)}</text>`;
   }).join('');
 
   return `<svg viewBox="0 0 ${W} ${totalH}" xmlns="http://www.w3.org/2000/svg"
@@ -658,7 +660,7 @@ export function generateExportHTML(d: ExportData): string {
   );
   const patternChart = svgHorizontalSimple(
     d.compoundPatternData.map((p, i) => ({ label: p.pattern, value: p.volume, color: C.pattern[i % C.pattern.length] })),
-    'pattern', { labelW: 190 }
+    'pattern', { labelW: 175, width: 450, barH: 28, gap: 11 }
   );
   const compTotal = d.compoundVsIsolation.Compound + d.compoundVsIsolation.Isolation;
   const compPct   = compTotal > 0 ? ((d.compoundVsIsolation.Compound / compTotal) * 100).toFixed(0) : '0';
@@ -716,7 +718,7 @@ export function generateExportHTML(d: ExportData): string {
               : (d.volumeByMuscle[m]||0) > 20 ? C.aboveMRV : C.below,
       }));
     const chart = items.length > 0
-      ? svgHorizontalSimple(items, `balance-${key}`, { labelW: 150, maxVal: Math.max(20, ...items.map(i => i.value)), groupKey: key })
+      ? svgHorizontalSimple(items, `balance-${key}`, { labelW: 145, maxVal: Math.max(20, ...items.map(i => i.value)), groupKey: key, width: 420, barH: 32, gap: 12 })
       : '<div style="font-size:11px;color:#94a3b8;font-style:italic;padding:12px 0">No data</div>';
     const itemDetail = items.map(it => {
       const lBadge = it.value >= 4 && it.value <= 20 ? badge('✓ Optimal','#dcfce7','#166534')
